@@ -26,7 +26,7 @@ VX.cache.v is the top module of the cache verilog code located in the `/hw/rtl/c
   - Core Rsp
   - DRAM Req
   - DRAM Rsp
-  - Snoop Rsp
+  - Snoop Rep
   - Snoop Rsp
   - Snoop Forwarding Out
   - Snoop Forwarding In
