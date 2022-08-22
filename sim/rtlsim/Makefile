@@ -1,38 +1,39 @@
-RTL_DIR=../../hw/rtl
-DPI_DIR=../../hw/dpi
+DESTDIR ?= .
+RTL_DIR = ../../hw/rtl
+DPI_DIR = ../../hw/dpi
+THIRD_PARTY_DIR = ../../third_party
 
 CXXFLAGS += -std=c++11 -Wall -Wextra -Wfatal-errors -Wno-array-bounds
 CXXFLAGS += -fPIC -Wno-maybe-uninitialized
 CXXFLAGS += -I../../../hw -I../../common
-CXXFLAGS += -I../../common/softfloat/source/include
+CXXFLAGS += -I../$(THIRD_PARTY_DIR)/softfloat/source/include
+CXXFLAGS += -I../$(THIRD_PARTY_DIR)
 
-LDFLAGS += ../../common/softfloat/build/Linux-x86_64-GCC/softfloat.a
+LDFLAGS += ../$(THIRD_PARTY_DIR)/softfloat/build/Linux-x86_64-GCC/softfloat.a
+LDFLAGS += -L../$(THIRD_PARTY_DIR)/ramulator -lramulator
 
 # control RTL debug tracing states
-DBG_TRACE_FLAGS += -DDBG_TRACE_PIPELINE  
+DBG_TRACE_FLAGS += -DDBG_TRACE_CORE_PIPELINE  
 DBG_TRACE_FLAGS += -DDBG_TRACE_CORE_ICACHE
 DBG_TRACE_FLAGS += -DDBG_TRACE_CORE_DCACHE
+DBG_TRACE_FLAGS += -DDBG_TRACE_CORE_MEM
 DBG_TRACE_FLAGS += -DDBG_TRACE_CACHE_BANK 
 DBG_TRACE_FLAGS += -DDBG_TRACE_CACHE_MSHR
 DBG_TRACE_FLAGS += -DDBG_TRACE_CACHE_TAG
 DBG_TRACE_FLAGS += -DDBG_TRACE_CACHE_DATA
-DBG_TRACE_FLAGS += -DDBG_TRACE_MEM
-DBG_TRACE_FLAGS += -DDBG_TRACE_OPAE
-DBG_TRACE_FLAGS += -DDBG_TRACE_AVS
+DBG_TRACE_FLAGS += -DDBG_TRACE_AFU
 DBG_TRACE_FLAGS += -DDBG_TRACE_SCOPE
 DBG_TRACE_FLAGS += -DDBG_TRACE_TEX
 
 DBG_FLAGS += $(DBG_TRACE_FLAGS)
-DBG_FLAGS += -DDBG_CACHE_REQ_INFO
-DBG_FLAGS += -DVCD_OUTPUT
 
-FPU_INCLUDE = -I$(RTL_DIR)/fp_cores -I$(RTL_DIR)/fp_cores/fpnew/src/common_cells/include -I$(RTL_DIR)/fp_cores/fpnew/src/common_cells/src -I$(RTL_DIR)/fp_cores/fpnew/src/fpu_div_sqrt_mvp/hdl -I$(RTL_DIR)/fp_cores/fpnew/src
+FPU_INCLUDE = -I$(RTL_DIR)/fp_cores -I$(THIRD_PARTY_DIR)/fpnew/src/common_cells/include -I$(THIRD_PARTY_DIR)/fpnew/src/common_cells/src -I$(THIRD_PARTY_DIR)/fpnew/src/fpu_div_sqrt_mvp/hdl -I$(THIRD_PARTY_DIR)/fpnew/src
 TEX_INCLUDE = -I$(RTL_DIR)/tex_unit
 RTL_INCLUDE = -I$(RTL_DIR) -I$(DPI_DIR) -I$(RTL_DIR)/libs -I$(RTL_DIR)/interfaces -I$(RTL_DIR)/cache -I$(RTL_DIR)/simulate $(FPU_INCLUDE) $(TEX_INCLUDE)
 
 SRCS = ../common/util.cpp ../common/mem.cpp ../common/rvfloats.cpp
 SRCS += $(DPI_DIR)/util_dpi.cpp $(DPI_DIR)/float_dpi.cpp
-SRCS += main.cpp simulator.cpp
+SRCS += processor.cpp
 
 ifdef AXI_BUS
 	TOP = Vortex_axi
@@ -51,9 +52,14 @@ VL_FLAGS += $(RTL_INCLUDE)
 VL_FLAGS += $(CONFIGS)
 CXXFLAGS += $(CONFIGS)
 
+# Enable Verilator multithreaded simulation
+THREADS ?= $(shell python -c 'import multiprocessing as mp; print(mp.cpu_count())')
+VL_FLAGS += -j $(THREADS)
+#VL_FLAGS += --threads $(THREADS)
+
 # Debugigng
 ifdef DEBUG
-	VL_FLAGS += -DVCD_OUTPUT --trace --trace-structs $(DBG_FLAGS)
+	VL_FLAGS += --trace --trace-structs -DVCD_OUTPUT $(DBG_FLAGS)
 	CXXFLAGS += -g -O0 -DVCD_OUTPUT $(DBG_FLAGS)
 else    
 	VL_FLAGS += -DNDEBUG
@@ -74,21 +80,15 @@ VL_FLAGS += -DIDIV_DPI
 FPU_CORE ?= FPU_DPI
 VL_FLAGS += -D$(FPU_CORE)
 
-THREADS ?= $(shell python3 -c 'import multiprocessing as mp; print(max(1, mp.cpu_count() // 2))')
-
 PROJECT = rtlsim
 
 all: $(PROJECT)
 
-$(PROJECT): $(SRCS)
-	verilator --build $(VL_FLAGS) $(SRCS) -CFLAGS '$(CXXFLAGS)' -LDFLAGS '$(LDFLAGS)' -o ../$(PROJECT)
+$(DESTDIR)/$(PROJECT): $(SRCS) main.cpp
+	verilator --build $(VL_FLAGS) $^ -CFLAGS '$(CXXFLAGS)' -LDFLAGS '$(LDFLAGS)' -o ../$@
 	
-static: $(SRCS)
-	verilator --build $(VL_FLAGS) $(SRCS) -CFLAGS '$(CXXFLAGS)' -LDFLAGS '$(LDFLAGS)'
-	$(AR) rcs lib$(PROJECT).a obj_dir/*.o ../common/softfloat/build/Linux-x86_64-GCC/*.o
+$(DESTDIR)/lib$(PROJECT).so: $(SRCS)
+	verilator --build $(VL_FLAGS) $^ -CFLAGS '$(CXXFLAGS)' -LDFLAGS '-shared $(LDFLAGS)' -o ../$@
 
-clean-static:
-	rm -rf lib$(PROJECT).a obj_dir
-
-clean: clean-static
-	rm -rf $(PROJECT)
+clean:
+	rm -rf obj_dir $(DESTDIR)/$(PROJECT) $(DESTDIR)/lib$(PROJECT).so

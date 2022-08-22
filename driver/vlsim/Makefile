@@ -4,12 +4,9 @@ RTL_DIR=../../hw/rtl
 
 SCRIPT_DIR=../../hw/scripts
 
-CXXFLAGS += -std=c++11 -O2 -DNDEBUG -Wall -Wextra -pedantic -Wfatal-errors
-#CXXFLAGS += -std=c++11 -O0 -g -Wall -Wextra -pedantic -Wfatal-errors
+CXXFLAGS += -std=c++11 -Wall -Wextra -pedantic -Wfatal-errors
 
 CXXFLAGS += -I. -I../include -I../../hw -I$(VLSIM_DIR)
-
-LDFLAGS += $(VLSIM_DIR)/libopae-c-vlsim.a
 
 # Position independent code
 CXXFLAGS += -fPIC
@@ -21,8 +18,16 @@ CXXFLAGS += $(CONFIGS)
 CXXFLAGS += -DDUMP_PERF_STATS
 
 LDFLAGS += -shared -pthread
+LDFLAGS += -L. -lopae-c-vlsim
 
 SRCS = ../common/opae.cpp ../common/vx_utils.cpp
+
+# Debugigng
+ifdef DEBUG
+	CXXFLAGS += -g -O0
+else    
+	CXXFLAGS += -O2 -DNDEBUG
+endif
 
 # Enable scope analyzer
 ifdef SCOPE
@@ -47,9 +52,9 @@ scope-defs.h: $(SCRIPT_DIR)/scope.json
 scope: scope-defs.h
 
 $(PROJECT): $(SRCS) $(SCOPE_H)
-	$(SCOPE_ENABLE) $(PERF_ENABLE) $(MAKE) -C $(VLSIM_DIR) static
+	DESTDIR=../../driver/vlsim $(MAKE) -C $(VLSIM_DIR) ../../driver/vlsim/libopae-c-vlsim.so
 	$(CXX) $(CXXFLAGS) -DUSE_VLSIM $(SRCS) $(LDFLAGS) -o $(PROJECT)
 
 clean:
-	$(MAKE) -C $(VLSIM_DIR) clean-static
-	rm -rf $(PROJECT) *.o scope-defs.h
+	DESTDIR=../../driver/vlsim $(MAKE) -C $(VLSIM_DIR) clean
+	rm -rf libopae-c-vlsim.so $(PROJECT) *.o scope-defs.h
